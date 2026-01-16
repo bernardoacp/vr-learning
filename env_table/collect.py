@@ -8,15 +8,13 @@ import csv
 # Configuration and API endpoints
 CSV_FILE = "/users/marcosbh/data/env.csv"
 FLASK_URL = "http://10.2.64.143:8000/start"
-PROMETHEUS_URL = "http://10.2.64.130:32635/"
+PROMETHEUS_URL = "http://10.100.246.192:9090/"
 DEPLOYMENT_NAME = "vr-deployment"
 
 # Experiment parameters
 MAX_PODS = 10
-MAX_CLIENTS = 20
-SPEED_RANGE = [10, 120]
-SPEED_STEP = 10 # in km/h
-RSU_RANGE = 400 # in meters
+MAX_CLIENTS = 15
+SESSION_DURATION = [30, 40, 50, 60, 70, 80, 90] # in seconds
 
 def scale_pods(num_pods):
     """Scale Kubernetes deployment to specified number of replicas and wait for readiness."""
@@ -76,7 +74,7 @@ if __name__ == "__main__":
     # Initialize CSV file with headers
     with open(CSV_FILE, "w", newline="") as f:
         csv.writer(f).writerow([
-            "num_pods", "num_clients", "avg_speed",
+            "num_pods", "num_clients", "session_duration_s",
             "cpu_m", "mem_Mi", "net_rx_KBps", "net_tx_KBps",
             "avg_latency_s", "z1_bit", "z2_bit", "z3_bit", "qt_sw_z1", "qt_sw_z2", "qt_sw_z3", "total_stall", "start_time", "QoE"
         ])
@@ -85,16 +83,18 @@ if __name__ == "__main__":
     for num_pods in range(1, MAX_PODS + 1):
         scale_pods(num_pods)
         for num_clients in range(1, MAX_CLIENTS + 1):
-            for avg_speed in range(SPEED_RANGE[0], SPEED_RANGE[1]+1, SPEED_STEP):
-                print(f"Running Experiment: Pods = {num_pods}, Clients = {num_clients}, Speed = {avg_speed}")
+            for session_duration in SESSION_DURATION:
+                print(f"Running Experiment: Pods = {num_pods}, Clients = {num_clients}, Duration = {session_duration} s")
 
                 # Calculate session duration based on speed and distance
-                session_duration = round(RSU_RANGE / (avg_speed / 3.6))
                 data = run_experiment(num_pods, num_clients, session_duration)
 
+                # Wait for metrics to stabilize
+                time.sleep(8)
+
                 # Prometheus queries for metrics
-                query_cpu = f'sum by (pod) (rate(container_cpu_usage_seconds_total{{namespace="default", pod=~"{DEPLOYMENT_NAME}.*", container="{DEPLOYMENT_NAME}"}}[{session_duration}s]))'
-                query_mem = f'avg_over_time(container_memory_working_set_bytes{{namespace="default",pod=~"{DEPLOYMENT_NAME}.*",container="{DEPLOYMENT_NAME}"}}[{session_duration}s])'
+                query_cpu = f'avg(sum by (pod) (rate(container_cpu_usage_seconds_total{{namespace="default", pod=~"{DEPLOYMENT_NAME}.*", container="{DEPLOYMENT_NAME}"}}[{session_duration}s])))'
+                query_mem = f'avg(sum by (pod) (avg_over_time(container_memory_working_set_bytes{{namespace="default",pod=~"{DEPLOYMENT_NAME}.*",container="{DEPLOYMENT_NAME}"}}[{session_duration}s])))'
                 query_rx = f'avg(sum(rate(container_network_receive_bytes_total{{namespace="default", pod=~"{DEPLOYMENT_NAME}.*"}}[{session_duration}s])) by (pod))'
                 query_tx = f'avg(sum(rate(container_network_transmit_bytes_total{{namespace="default", pod=~"{DEPLOYMENT_NAME}.*"}}[{session_duration}s])) by (pod))'
 
@@ -106,6 +106,6 @@ if __name__ == "__main__":
 
                 # Write experiment results to CSV
                 with open(CSV_FILE, "a", newline="") as f:
-                    csv.writer(f).writerow([num_pods, num_clients, avg_speed, cpu, mem, rx, tx, data.get("avg_latency", 0), data.get("z1_bit", 0), data.get("z2_bit", 0), data.get("z3_bit", 0), data.get("qt_sw_z1", 0), data.get("qt_sw_z2", 0), data.get("qt_sw_z3", 0), data.get("total_stall", 0), data.get("start_time", 0), data.get("QoE", 0)])
+                    csv.writer(f).writerow([num_pods, num_clients, session_duration, cpu, mem, rx, tx, data.get("avg_latency", 0), data.get("z1_bit", 0), data.get("z2_bit", 0), data.get("z3_bit", 0), data.get("qt_sw_z1", 0), data.get("qt_sw_z2", 0), data.get("qt_sw_z3", 0), data.get("total_stall", 0), data.get("start_time", 0), data.get("QoE", 0)])
 
     print("Experiment complete, data saved to data/env.csv")

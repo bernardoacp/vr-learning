@@ -15,8 +15,6 @@ CLIENT_IP = "10.2.64.143"
 WORKER_IP = "10.2.64.137"
 SERVER_IP = "10.2.64.130"
 
-RSU_RANGE = 400  # in meters
-
 def create_folders(num_clients, base_path):
     """
     Create directory structure for storing player logs.
